@@ -57,6 +57,46 @@ class WorkflowControlTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(control.stream.head, 0)
 
+    def test_mobile_crew_rejected_requirement_publishes_nothing(self):
+        control = RampWorkflowControl()
+        calls = []
+        denied = Decision(False, "crew-overtime", "crew would exceed duty")
+        with self.assertRaises(WorkflowRejected):
+            control.assign_mobile_crew(
+                "op-5", "C1", self.at,
+                lambda: calls.append("committed"), requirements=(denied,),
+            )
+        self.assertEqual(calls, [])
+        self.assertEqual(control.stream.head, 0)
+        self.assertEqual(control.receipts, {})
+
+    def test_mobile_crew_failing_action_publishes_nothing(self):
+        control = RampWorkflowControl()
+
+        def fail():
+            raise RuntimeError("vehicle not ready in time")
+
+        with self.assertRaises(RuntimeError):
+            control.assign_mobile_crew("op-6", "C1", self.at, fail)
+        self.assertEqual(control.stream.head, 0)
+        self.assertEqual(control.receipts, {})
+
+    def test_mobile_crew_success_idempotent_single_event(self):
+        control = RampWorkflowControl()
+        calls = []
+
+        def action():
+            calls.append(1)
+            return "assigned"
+
+        first = control.assign_mobile_crew("op-7", "C1", self.at, action)
+        second = control.assign_mobile_crew("op-7", "C1", self.at, action)
+        self.assertIs(first, second)
+        self.assertEqual(first.event.topic, "mobile.crew.assignment.committed")
+        self.assertEqual(first.result, "assigned")
+        self.assertEqual(calls, [1])
+        self.assertEqual(control.stream.head, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

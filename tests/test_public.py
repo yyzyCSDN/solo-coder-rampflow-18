@@ -72,6 +72,49 @@ class PublicTests(unittest.TestCase):
         plan=d.plan(req)
         self.assertEqual((plan.arrive_at-plan.depart_at).total_seconds(),20)
 
+    def test_short_break_does_not_restart_duty(self):
+        c=CrewDutyController([CrewMember('C1',frozenset({'push'}),'A',600,60,240)])
+        c.assign('C1',DutySegment('s1',Window(D(8),D(12)),'A','push'))
+        # ten minutes off is not a real rest: 240+30 minutes of work stays one
+        # continuous block and must be refused instead of silently restarting.
+        ok,reason=c.can_accept('C1',DutySegment('s2',Window(D(12,10),D(12,40)),'A','push'))
+        self.assertFalse(ok)
+        self.assertEqual(reason,'continuous work limit exceeded')
+        with self.assertRaises(Exception):
+            c.assign('C1',DutySegment('s2b',Window(D(12,10),D(12,40)),'A','push'))
+
+    def test_real_rest_opens_new_continuous_block(self):
+        c=CrewDutyController([CrewMember('C1',frozenset({'push'}),'A',600,60,240)])
+        c.assign('C1',DutySegment('s1',Window(D(8),D(12)),'A','push'))
+        ok,_=c.can_accept('C1',DutySegment('s3',Window(D(13),D(13,30)),'A','push'))
+        self.assertTrue(ok)
+
+    def test_dispatch_respects_resource_ready_time(self):
+        g=TravelGraph();g.add('A','B',100);g.add('B','C',100);g.add('A','C',500)
+        req=DispatchRequest('Q','bus',None,'C',D(10),5,D(10,10))
+        # resource only ready at 10:06: arrives 10:06:20, finishes 10:11:20 -> reject
+        late=ResourceDispatcher([MobileResource('LATE','bus',frozenset(),'A',D(10,6),10)],g)
+        with self.assertRaises(Exception):
+            late.plan(req)
+        # ready at 10:00: departure cannot precede readiness; arrival is 10:00:20
+        d=ResourceDispatcher([MobileResource('R','bus',frozenset(),'A',D(10),10)],g)
+        plan=d.plan(req)
+        self.assertEqual(plan.depart_at,D(10))
+        self.assertEqual(plan.arrive_at,D(10)+timedelta(seconds=20))
+        self.assertEqual(plan.service.start,D(10)+timedelta(seconds=20))
+        # planning alone must not occupy the resource
+        self.assertEqual(d.state('R').location,'A')
+        self.assertEqual(d.state('R').available_at,D(10))
+
+    def test_dispatch_skips_unreachable_resource(self):
+        g=TravelGraph();g.add('A','B',100);g.add('B','C',100);g.add('A','C',500)
+        req=DispatchRequest('Q','bus',None,'C',D(10),5,D(10,10))
+        d=ResourceDispatcher([
+            MobileResource('X','bus',frozenset(),'ZZ',D(9),10),
+            MobileResource('Y','bus',frozenset(),'A',D(9),10),
+        ],g)
+        self.assertEqual(d.plan(req).resource_id,'Y')
+
     def test_stand_capacity(self):
         o=StandOrchestrator([StandProfile('S','T',40,True,1)])
         a=o.plan(StandDemand('F',Window(D(10),D(11)),35,False))

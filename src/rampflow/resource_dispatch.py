@@ -100,9 +100,16 @@ class ResourceDispatcher:
             return None
         if request.capability and request.capability not in resource.capabilities:
             return None
-        distance = self.graph.distance(resource.location, request.location)
+        try:
+            distance = self.graph.distance(resource.location, request.location)
+        except DispatchError:
+            return None
         travel_seconds = int(distance / resource.speed_m_s)
-        depart = request.earliest - timedelta(seconds=travel_seconds)
+        # The resource cannot depart before it is actually ready; it may leave
+        # as early as that ready time and wait on site. Anchoring departure to
+        # the ready time (instead of earliest - travel) keeps real readiness,
+        # travel time and the request window on one timeline.
+        depart = resource.available_at
         arrive = depart + timedelta(seconds=travel_seconds)
         start = max(arrive, request.earliest)
         service = Window(start, start + timedelta(minutes=request.service_min))

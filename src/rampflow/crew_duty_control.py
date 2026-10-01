@@ -66,7 +66,7 @@ class CrewDutyController:
         for seg in ordered:
             if last_end is not None:
                 gap = int((seg.window.start - last_end).total_seconds() // 60)
-                if gap > 0:
+                if gap >= member.min_rest_min:
                     continuous = 0
             if seg.work:
                 continuous += self._minutes(seg.window)

@@ -76,11 +76,7 @@ class RampWorkflowControl:
         return self._guard(operation_id, "stand.service.package.committed", subject, at, action, requirements=requirements)
 
     def assign_mobile_crew(self, operation_id: str, subject: str, at: datetime, action: Callable[[], T], requirements: tuple[Decision, ...] = ()) -> OperationReceipt:
-        event = self.stream.publish(operation_id, utc(at), "mobile.crew.assignment.committed", subject, {"operation_id": operation_id})
-        result = action()
-        receipt = OperationReceipt(operation_id, event.topic, subject, event, result)
-        self._receipts[operation_id] = receipt
-        return receipt
+        return self._guard(operation_id, "mobile.crew.assignment.committed", subject, at, action, requirements=requirements)
 
     def reconcile_fuel_load(self, operation_id: str, subject: str, at: datetime, action: Callable[[], T], requirements: tuple[Decision, ...] = ()) -> OperationReceipt:
         return self._guard(operation_id, "fuel.load.reconciliation.committed", subject, at, action, requirements=requirements)
